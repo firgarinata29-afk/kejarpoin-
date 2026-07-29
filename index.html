@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game 2D GitHub - Time & Level</title>
+    <style>
+        body {
+            background-color: #1a1a2e;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding: 20px;
+        }
+        #game-container {
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        canvas {
+            background: linear-gradient(to bottom, #16213e, #0f3460);
+            display: block;
+        }
+        .ui-panel {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 20px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .controls {
+            margin-top: 15px;
+            text-align: center;
+            font-size: 14px;
+            color: #a2a8d3;
+        }
+        button {
+            padding: 8px 16px;
+            font-size: 16px;
+            background-color: #e94560;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover {
+            background-color: #ff6b81;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🎮 Catch & Avoid Game</h1>
+
+    <div class="ui-panel">
+        <div>Level: <span id="level-display">1</span></div>
+        <div>Waktu: <span id="time-display">30</span>s</div>
+        <div>Skor P1: <span id="p1-score">0</span></div>
+        <div>Skor P2/Bot: <span id="p2-score">0</span></div>
+    </div>
+
+    <div id="game-container">
+        <canvas id="gameCanvas" width="600" height="400"></canvas>
+    </div>
+
+    <div class="controls">
+        <p><strong>Mode:</strong> <button onclick="toggleBot()">Toggle Mode: <span id="mode-text">VS Bot</span></button></p>
+        <p><strong>Kontrol P1 (Biru):</strong> Panah (Up, Down, Left, Right)</p>
+        <p><strong>Kontrol P2 (Hijau):</strong> Tombol W, A, S, D</p>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Audio System (Synthesizer Sederhana)
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSound(freq, type = 'sine', duration = 0.1) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        // State Game
+        let level = 1;
+        let timeLeft = 30;
+        let isVsBot = true;
+        let gameInterval;
+        let timerInterval;
+
+        // Entitas
+        const p1 = { x: 100, y: 200, size: 20, color: '#4cc9f0', score: 0, speed: 4 };
+        const p2 = { x: 500, y: 200, size: 20, color: '#4ade80', score: 0, speed: 3 };
+        const target = { x: 300, y: 200, size: 12, color: '#f72585' };
+
+        const keys = {};
+
+        // Input Listener
+        window.addEventListener('keydown', (e) => keys[e.key] = true);
+        window.addEventListener('keyup', (e) => keys[e.key] = false);
+
+        function toggleModeText() {
+            document.getElementById('mode-text').innerText = isVsBot ? "VS Bot" : "2 Players";
+        }
+
+        function toggleBot() {
+            isVsBot = !isVsBot;
+            toggleModeText();
+            resetPositions();
+        }
+
+        function spawnTarget() {
+            target.x = Math.random() * (canvas.width - 40) + 20;
+            target.y = Math.random() * (canvas.height - 40) + 20;
+        }
+
+        function resetPositions() {
+            p1.x = 100; p1.y = 200;
+            p2.x = 500; p2.y = 200;
+            spawnTarget();
+        }
+
+        // Update Pergerakan
+        function update() {
+            // Player 1 (Panah)
+            if (keys['ArrowUp'] && p1.y > 0) p1.y -= p1.speed;
+            if (keys['ArrowDown'] && p1.y < canvas.height - p1.size) p1.y += p1.speed;
+            if (keys['ArrowLeft'] && p1.x > 0) p1.x -= p1.speed;
+            if (keys['ArrowRight'] && p1.x < canvas.width - p1.size) p1.x += p1.speed;
+
+            // Player 2 / Bot
+            if (isVsBot) {
+                // Perilaku Bot sederhana mengikuti target
+                const speed = p2.speed + (level * 0.2);
+                if (p2.x < target.x) p2.x += speed;
+                if (p2.x > target.x) p2.x -= speed;
+                if (p2.y < target.y) p2.y += speed;
+                if (p2.y > target.y) p2.y -= speed;
+            } else {
+                // Player 2 (WASD)
+                if ((keys['w'] || keys['W']) && p2.y > 0) p2.y -= p2.speed;
+                if ((keys['s'] || keys['S']) && p2.y < canvas.height - p2.size) p2.y += p2.speed;
+                if ((keys['a'] || keys['A']) && p2.x > 0) p2.x -= p2.speed;
+                if ((keys['d'] || keys['D']) && p2.x < canvas.width - p2.size) p2.x += p2.speed;
+            }
+
+            // Cek Tabrakan dengan Target
+            checkCollision(p1, () => {
+                p1.score += 10;
+                document.getElementById('p1-score').innerText = p1.score;
+                playSound(600, 'triangle');
+                spawnTarget();
+            });
+
+            checkCollision(p2, () => {
+                p2.score += 10;
+                document.getElementById('p2-score').innerText = p2.score;
+                playSound(300, 'sawtooth');
+                spawnTarget();
+            });
+        }
+
+        function checkCollision(player, onCollide) {
+            const dist = Math.hypot(player.x - target.x, player.y - target.y);
+            if (dist < player.size + target.size) {
+                onCollide();
+            }
+        }
+
+        // Render Grafik
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Gambar Background Dekorasi Animasi
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+            for(let i = 0; i < canvas.width; i += 40) {
+                ctx.fillRect(i, 0, 2, canvas.height);
+            }
+
+            // Gambar Target
+            ctx.fillStyle = target.color;
+            ctx.beginPath();
+            ctx.arc(target.x, target.y, target.size, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Gambar Player 1
+            ctx.fillStyle = p1.color;
+            ctx.fillRect(p1.x - p1.size/2, p1.y - p1.size/2, p1.size, p1.size);
+
+            // Gambar Player 2 / Bot
+            ctx.fillStyle = p2.color;
+            ctx.fillRect(p2.x - p2.size/2, p2.y - p2.size/2, p2.size, p2.size);
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Timer dan Sistem Level
+        function startTimer() {
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                document.getElementById('time-display').innerText = timeLeft;
+
+                if (timeLeft <= 0) {
+                    level++;
+                    timeLeft = 30;
+                    document.getElementById('level-display').innerText = level;
+                    playSound(800, 'square', 0.3); // Suara naik level
+                    resetPositions();
+                }
+            }, 1000);
+        }
+
+        // Jalankan Game
+        spawnTarget();
+        startTimer();
+        gameLoop();
+    </script>
+</body>
+</html>
